@@ -26,7 +26,7 @@
      <x>0</x>
      <y>0</y>
      <width>800</width>
-     <height>21</height>
+     <height>20</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuFile">
@@ -35,12 +35,33 @@
     </property>
     <addaction name="actionOpen_file"/>
    </widget>
+   <widget class="QMenu" name="menuConsole">
+    <property name="title">
+     <string>Console</string>
+    </property>
+    <addaction name="actionOpen"/>
+    <addaction name="actionSelection"/>
+   </widget>
    <addaction name="menuFile"/>
+   <addaction name="menuConsole"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
   <action name="actionOpen_file">
    <property name="text">
     <string>Open file</string>
+   </property>
+  </action>
+  <action name="actionOpen">
+   <property name="text">
+    <string>Open</string>
+   </property>
+  </action>
+  <action name="actionSelection">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Selection</string>
    </property>
   </action>
  </widget>
