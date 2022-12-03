@@ -22,34 +22,36 @@ WaterfallViewer::WaterfallViewer(QWidget *parent)
     customPlot->yAxis->setLabel("Time");
 
     colorScale = new QCPColorScale(this->ui->plotter);
-    this->ui->plotter->plotLayout()->addElement(0, 1, colorScale); // add it to the right of the main axis rect
-    colorScale->setType(QCPAxis::atRight); // scale shall be vertical bar with tick/axis labels right (actually atRight is already the default)
+    this->ui->plotter->plotLayout()->addElement(0, 1, colorScale);
+    colorScale->setType(QCPAxis::atRight);
     colorScale->axis()->setLabel("Signal amplitude");
+
+    this->ui->plotter->addLayer("Dots");
+
+    this->toolBar = new CustomToolBar(this);
+    this->toolBar->draw(this->ui->toolBar);
+
+    connect(toolBar, &CustomToolBar::onSampleRate_TextChanged, this, &WaterfallViewer::sampleRateChanged);
+    connect(toolBar, &CustomToolBar::onFFTOrder_TextChanged, this, &WaterfallViewer::fftOrderChanged);
+    connect(toolBar, &CustomToolBar::onScaleFactor_TextChanged, this, &WaterfallViewer::scaleFactorChanged);
+
+    this->toolBar->emitAll();
+
+    qRegisterMetaType<QCPColorGradient>("QCPColorGradient");
+    qRegisterMetaType<QCPRange>("QCPRange");
 }
 
 WaterfallViewer::~WaterfallViewer()
 {
-    if (!this->colorMaps.empty()) {
-        std::for_each(std::begin(this->colorMaps), std::end(this->colorMaps), [](QCPColorMap * item) {
-            if (item != nullptr) {
-                delete item;
-            }
-        });
-
-        this->colorMaps.clear();
-    }
-
     delete ui;
 }
 
 
 void WaterfallViewer::on_actionOpen_file_triggered()
 {
-    this->ui->plotter->clearPlottables();
-
-    const uint32_t windowSize = std::pow(2, 10);
+    const uint32_t windowSize = std::pow(2, this->fftOrder);
     fftResolution = Fs / 2.0 / (double)windowSize;
-    const uint32_t scale = 8;
+    const uint32_t scale = this->scale;
 
 #ifdef WIN32
     QString fileName = QFileDialog::getOpenFileName(this,
@@ -57,7 +59,7 @@ void WaterfallViewer::on_actionOpen_file_triggered()
                                                     tr("Record files (*.bin *.dat *.pcm *.iq16)"));
 #elif __unix__
     QString fileName = QFileDialog::getOpenFileName(this,
-                                                    tr("Open record"), "/home/jana", \
+                                                    tr("Open record"), "/home", \
                                                     tr("Record files (*.bin *.dat *.pcm *.iq16)"));
 #else
 #error What is this operating system?
@@ -80,106 +82,29 @@ void WaterfallViewer::on_actionOpen_file_triggered()
         return;
     }
 
+    this->cleanPlotter();
+
     readFile.read((char*)signal.data(), fileInfo.size());
     readFile.close();
 
     uint64_t verticalSize = signal.size() / 4;
     uint64_t horizontalSize = windowSize;
 
-    if (!this->colorMaps.empty()) {
-        std::for_each(std::begin(this->colorMaps), std::end(this->colorMaps), [](QCPColorMap * item) {
-            if (item != nullptr) {
-                delete item;
-            }
-        });
-
-        this->colorMaps.clear();
-    }
-
     ts = (double)2 / Fs * (double)windowSize / (double)scale;
 
-//    size_t blocks = verticalSize % (windowSize / scale);
-//    blocks = (verticalSize - blocks) / (windowSize / scale);
-//    size_t oneStep = (windowSize / scale);
+    size_t availThreads = std::thread::hardware_concurrency() / 2;
+    std::vector<std::thread> threadPool(availThreads);
 
-//    if (std::thread::hardware_concurrency() > 4) {
-//        std::vector<std::thread> threadPool(4);
+    // Create color maps pool ==================================================
+    uint32_t step = windowSize / scale;
+    size_t maps = (verticalSize - (verticalSize % scale)) / scale;
+    for (size_t i = 0; i < maps; i++) {
+        this->colorMaps.push_back(new QCPColorMap(this->ui->plotter->xAxis, \
+                                                  this->ui->plotter->yAxis));
+    }
+    // =========================================================================
 
-//        std::array<size_t, 4> startIndexes;
 
-//        QString message = QString("Start indexes: ");
-//        for (size_t i = 0; i < startIndexes.size(); i++) {
-//            startIndexes.at(i) = blocks / threadPool.size() * i;
-//            message += QString::number(startIndexes.at(i));
-//            if (i != startIndexes.size() - 1) {
-//                message += ", ";
-//            }
-//        }
-
-//        emit printConsole(message);
-//        emit printConsole("Total blocks: " + QString::number(blocks));
-
-//        this->colorMaps.resize(blocks);
-
-//        for (size_t i = 0; i < threadPool.size(); i++) {
-//            size_t startIndex = startIndexes.at(i);
-//            size_t nextIndex = 0;
-//            if (i != threadPool.size() - 1)
-//                nextIndex = startIndexes.at(i + 1);
-//            else
-//                nextIndex = blocks;
-
-//            threadPool.at(i) = std::thread([this, startIndex, nextIndex, oneStep, windowSize, horizontalSize, &signal]() {
-//                std::vector<std::complex<float>> complexSignal(windowSize);
-//                std::vector<std::complex<float>> complexFFTRes(windowSize);
-//                std::vector<float> windowData(windowSize);
-
-//                for (size_t i = startIndex; i < nextIndex; i++) {
-
-//                    size_t offset = i * oneStep;
-
-//                    this->colorMaps.at(i) = new QCPColorMap(this->ui->plotter->xAxis, this->ui->plotter->yAxis);
-//                    QCPColorMap * waterfallMap = this->colorMaps.back();
-//                    if (waterfallMap == nullptr) {
-//                        this->ui->statusbar->showMessage("No more color maps...");
-//                        break;
-//                    }
-
-//                    waterfallMap->data()->setSize(horizontalSize, 1);
-//                    waterfallMap->data()->setRange(QCPRange(0, horizontalSize), QCPRange(i, i + 1));
-
-//                    std::transform(std::begin(signal) + i, std::begin(signal) + i + windowSize, std::begin(complexSignal), [](const iq16_t & item) {
-//                        return std::complex<float>((float)item.I, (float)item.Q);
-//                    });
-
-//                    stdComplexFFT(std::begin(complexSignal), std::begin(complexFFTRes), std::log2(windowSize));
-
-//                    // Half replacements ===================================================
-//                    std::vector<std::complex<float>> tmp{std::begin(complexFFTRes), \
-//                                std::begin(complexFFTRes) + complexFFTRes.size() / 2};
-//                    std::copy(std::begin(complexFFTRes) + complexFFTRes.size() / 2, \
-//                              std::end(complexFFTRes), std::begin(complexFFTRes));
-//                    std::copy(std::begin(tmp), std::end(tmp), \
-//                              std::begin(complexFFTRes) + tmp.size());
-//                    // =====================================================================
-
-//                    for (size_t l = 0; l < windowSize; l++) {
-//                        waterfallMap->data()->setCell(l, 0, std::abs(complexFFTRes.at(l)));
-//                    }
-
-//                    waterfallMap->setColorScale(colorScale); // associate the color map with the color scale
-//                    waterfallMap->setGradient(QCPColorGradient::gpSpectrum);
-//                    waterfallMap->rescaleDataRange();
-//                }
-//            });
-//        }
-
-//        std::for_each(std::begin(threadPool), std::end(threadPool), [](std::thread & item) {
-//            item.join();
-//        });
-//    }
-
-//    return;
 
     size_t key = 0;
     for (size_t i = 0; i < verticalSize; i += windowSize / scale) {
@@ -217,7 +142,7 @@ void WaterfallViewer::on_actionOpen_file_triggered()
         }
 
         waterfallMap->setColorScale(colorScale); // associate the color map with the color scale
-        waterfallMap->setGradient(QCPColorGradient::gpSpectrum);
+        waterfallMap->setGradient(QCPColorGradient::gpGrayscale);
         waterfallMap->rescaleDataRange();
     }
 
@@ -227,21 +152,26 @@ void WaterfallViewer::on_actionOpen_file_triggered()
 
 void WaterfallViewer::plotterMousePressSlot(QMouseEvent *event)
 {
-
-
     if (selectionMode) {
 
         double x = this->ui->plotter->xAxis->pixelToCoord(event->pos().x());
         double y = this->ui->plotter->yAxis->pixelToCoord(event->pos().y());
 
         if (this->clickCounter == 0) {
-            this->ui->plotter->clearGraphs();
+            this->dotGraphKeys.clear();
+            this->dotGraphVals.clear();
 
             this->fPoint = std::make_pair(x, y);
+
+            this->dotGraphKeys.push_back(x);
+            this->dotGraphVals.push_back(y);
 
             this->clickCounter = 1;
         } else if (this->clickCounter == 1) {
             this->sPoint = std::make_pair(x, y);
+
+            this->dotGraphKeys.push_back(x);
+            this->dotGraphVals.push_back(y);
 
             double duration = std::abs(fPoint.second - sPoint.second) * ts * 1e6;
             double width = std::abs(fPoint.first - sPoint.first) * fftResolution / 1e6;
@@ -263,13 +193,7 @@ void WaterfallViewer::plotterMousePressSlot(QMouseEvent *event)
             this->clickCounter = 0;
         }
 
-        QCPGraph * graph = this->ui->plotter->addGraph();
-
-        graph->setData(QVector<double>{x}, QVector<double>{y});
-        graph->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssPlus, 100));
-        graph->setLineStyle((QCPGraph::LineStyle::lsNone));
-        graph->setPen(QPen(Qt::black));
-
+        this->dotGraph->setData(this->dotGraphKeys, this->dotGraphVals);
         this->ui->plotter->replot();
     }
 }
@@ -284,5 +208,62 @@ void WaterfallViewer::on_actionOpen_triggered()
 void WaterfallViewer::on_actionSelection_triggered(bool checked)
 {
     this->selectionMode = checked;
+}
+
+void WaterfallViewer::sampleRateChanged(const QString &text)
+{
+    bool ret = false;
+    double sampleRate = text.toDouble(&ret);
+    if (ret) {
+        this->Fs = sampleRate;
+        this->ui->statusbar->showMessage("New sample rate applied");
+    } else {
+        this->Fs = 192e6;
+        this->ui->statusbar->showMessage("Wrong sample rate format [default " + QString::number(Fs) + "]");
+    }
+}
+
+void WaterfallViewer::fftOrderChanged(const QString &text)
+{
+    bool ret = false;
+    double fftOrder = text.toUInt(&ret);
+    if (ret) {
+        this->fftOrder = fftOrder;
+        this->ui->statusbar->showMessage("New FFT order applied");
+    } else {
+        this->fftOrder = 10;
+        this->ui->statusbar->showMessage("Wrong FFT order format [default " + QString::number(fftOrder) + "]");
+    }
+}
+
+void WaterfallViewer::scaleFactorChanged(const QString &text)
+{
+    bool ret = false;
+    double scaleFactor = text.toUInt(&ret);
+    if (ret) {
+        this->scale = scaleFactor;
+        this->ui->statusbar->showMessage("New scale factor applied");
+    } else {
+        this->scale = 8;
+        this->ui->statusbar->showMessage("Wrong scale factor format [default " + QString::number(scale) + "]");
+    }
+}
+
+void WaterfallViewer::cleanPlotter() {
+    this->ui->plotter->clearPlottables();
+    this->ui->plotter->clearGraphs();
+
+    this->dotGraph = this->ui->plotter->addGraph();
+    this->dotGraph->setLayer("Dots");
+    this->dotGraph->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssPlusCircle, 100));
+    this->dotGraph->setLineStyle((QCPGraph::LineStyle::lsNone));
+
+    QPen dotPen = QPen(Qt::black);
+    dotPen.setWidth(5);
+    this->dotGraph->setPen(dotPen);
+
+    if (!this->colorMaps.empty()) {
+        this->colorMaps.clear();
+    }
 }
 

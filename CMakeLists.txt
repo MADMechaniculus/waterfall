@@ -13,10 +13,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 #add_definitions(-DQCUSTOMPLOT_USE_OPENGL)
 
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets)
-
-add_subdirectory(${PROJECT_SOURCE_DIR}/QCustomPlot)
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets PrintSupport)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets PrintSupport)
 
 set(PROJECT_SOURCES
     main.cpp
@@ -28,6 +26,9 @@ set(PROJECT_SOURCES
     consoleform.h
     consoleform.cpp
     consoleform.ui
+
+    qcustomplot.cpp
+    qcustomplot.h
     )
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
@@ -53,7 +54,10 @@ else()
     endif()
 endif()
 
-target_link_libraries(waterfall PRIVATE Qt${QT_VERSION_MAJOR}::Widgets QCustomPlot pthread)
+target_link_libraries(waterfall PRIVATE
+    Qt${QT_VERSION_MAJOR}::Widgets
+    Qt${QT_VERSION_MAJOR}::PrintSupport
+    pthread)
 
 set_target_properties(waterfall PROPERTIES
     MACOSX_BUNDLE_GUI_IDENTIFIER my.example.com
