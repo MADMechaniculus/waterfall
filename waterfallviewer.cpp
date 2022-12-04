@@ -32,7 +32,7 @@ WaterfallViewer::WaterfallViewer(QWidget *parent)
     this->ui->plotter->addLayer("Dots");
     
     this->toolBar = new CustomToolBar(this);
-    this->toolBar->draw(this->ui->toolBar);
+    this->toolBar->draw(this->ui->topToolBar);
     
     connect(toolBar, &CustomToolBar::onSampleRate_TextChanged, this, &WaterfallViewer::sampleRateChanged);
     connect(toolBar, &CustomToolBar::onFFTOrder_TextChanged, this, &WaterfallViewer::fftOrderChanged);
@@ -51,8 +51,9 @@ WaterfallViewer::~WaterfallViewer()
 void WaterfallViewer::on_actionOpen_file_triggered()
 {
     const uint32_t windowSize = std::pow(2, this->fftOrder);
-    fftResolution = Fs / 2.0 / (double)windowSize;
     const uint32_t scale = this->scale;
+    
+    fftResolution = Fs / 2.0 / (double)windowSize;
     
 #ifdef WIN32
     QString fileName = QFileDialog::getOpenFileName(this,
@@ -67,23 +68,19 @@ void WaterfallViewer::on_actionOpen_file_triggered()
 #endif
     
     if (fileName.isEmpty()) {
+        this->ui->statusbar->showMessage("Empty filename");
         return;
     }
     
     QFileInfo fileInfo(fileName);
     
     std::vector<iq16_t> signal(fileInfo.size() / sizeof (iq16_t));
-    std::vector<std::complex<float>> complexSignal(windowSize);
-    std::vector<std::complex<float>> complexFFTRes(windowSize);
-    std::vector<float> windowData(windowSize);
     
     std::ifstream readFile(fileName.toStdString(), std::ios::binary);
     if (!readFile.is_open()) {
         this->ui->statusbar->showMessage("Error on opening read stream");
         return;
     }
-    
-    this->cleanPlotter();
     
     readFile.read((char*)signal.data(), fileInfo.size());
     readFile.close();
@@ -92,6 +89,18 @@ void WaterfallViewer::on_actionOpen_file_triggered()
     uint64_t horizontalSize = windowSize;
     
     ts = (double)2 / Fs * (double)windowSize / (double)scale;
+    
+    this->cleanPlotter();
+    
+    // =========================================================================
+    // Multithread solution ====================================================
+    // =========================================================================
+    
+    // TODO:
+    // 1. Parallel executor with signals and slots for connectivity with 
+    // parent thread;
+    // 2. Non-blocking execution with displaying progress of computation on
+    // progressbar;
     
     size_t availThreads = std::thread::hardware_concurrency() / 2;
     std::vector<std::thread> threadPool(availThreads);
@@ -107,17 +116,31 @@ void WaterfallViewer::on_actionOpen_file_triggered()
     
     // Calculating thread payloads =============================================
     std::vector<std::pair<size_t, size_t>> threadRanges(threadPool.size());
-    size_t perThread = maps.size() / threadPool.size();
+    size_t perThread = maps / threadPool.size();
     size_t prevIndex = 0;
     for (size_t t = 0; t < threadPool.size(); t++) {
         if (t != threadPool.size() - 1) {
             threadRanges.at(t) = std::make_pair(prevIndex, prevIndex + perThread);
         } else {
-            threadRanges.at(t) = std::make_pair(prevIndex, maps.size() - 1);
+            threadRanges.at(t) = std::make_pair(prevIndex, maps - 1);
         }
         prevIndex += perThread;
     }
     // =========================================================================
+    
+    // =========================================================================
+    // End of multithread solution =============================================
+    // =========================================================================
+    
+    
+    
+    // =========================================================================
+    // Start of single thread solution =========================================
+    // =========================================================================
+    
+    std::vector<std::complex<float>> complexSignal(windowSize);
+    std::vector<std::complex<float>> complexFFTRes(windowSize);
+    std::vector<float> windowData(windowSize);
     
     size_t key = 0;
     for (size_t i = 0; i < verticalSize; i += windowSize / scale) {
@@ -158,6 +181,12 @@ void WaterfallViewer::on_actionOpen_file_triggered()
         waterfallMap->setGradient(QCPColorGradient::gpGrayscale);
         waterfallMap->rescaleDataRange();
     }
+    
+    // =========================================================================
+    // End of single thread solution ===========================================
+    // =========================================================================
+    
+    
     
     this->ui->plotter->rescaleAxes();
     this->ui->plotter->replot();

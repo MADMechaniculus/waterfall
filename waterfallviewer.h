@@ -28,8 +28,7 @@ class CustomToolBar : public QObject {
 
     QLineEdit * sampleRate;
     QLineEdit * fftOrder;
-    QLineEdit * scaleFactor;
-    QProgressBar * progress;
+    QLineEdit * scaleFactor;    
 
 public:
     CustomToolBar(QObject * parent) : QObject(parent) {
@@ -39,11 +38,6 @@ public:
         this->fftOrder->setText("10");
         this->scaleFactor = new QLineEdit();
         this->scaleFactor->setText("8");
-
-        this->progress = new QProgressBar();
-        this->progress->setMinimum(0);
-        this->progress->setMaximum(100);
-        this->progress->setValue(100);
 
         connect(sampleRate, &QLineEdit::textChanged, this, &CustomToolBar::onSampleRate_TextChanged);
         connect(fftOrder, &QLineEdit::textChanged, this, &CustomToolBar::onFFTOrder_TextChanged);
@@ -60,8 +54,6 @@ public:
         rootBar->addSeparator();
         rootBar->addWidget(new QLabel("Scale factor"));
         rootBar->addWidget(this->scaleFactor);
-        rootBar->addSeparator();
-        rootBar->addWidget(this->progress);
     }
 
     void emitAll(void) {
