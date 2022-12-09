@@ -30,9 +30,18 @@ set(PROJECT_SOURCES
     qcustomplot.cpp
     qcustomplot.h
 
-    mtstatus.h
-    mtstatus.cpp
-    mtstatus.ui
+    customtoolbar.h
+    customtoolbar.cpp
+
+    colormapworker.h
+    colormapworker.cpp
+
+    utilitytoolbar.h
+    utilitytoolbar.cpp
+
+#    mtstatus.h
+#    mtstatus.cpp
+#    mtstatus.ui
     )
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)

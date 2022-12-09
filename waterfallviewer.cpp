@@ -40,6 +40,8 @@ WaterfallViewer::WaterfallViewer(QWidget *parent)
     
     // Обновление параметров анализа (fs, fft_order, scale)
     this->toolBar->emitAll();
+
+    this->utilBar = new UtilityToolBar(this->ui->bottomToolBar, this);
 }
 
 WaterfallViewer::~WaterfallViewer()
@@ -50,6 +52,8 @@ WaterfallViewer::~WaterfallViewer()
 
 void WaterfallViewer::on_actionOpen_file_triggered()
 {
+    return;
+
     const uint32_t windowSize = std::pow(2, this->fftOrder);
     const uint32_t scale = this->scale;
     
@@ -97,37 +101,38 @@ void WaterfallViewer::on_actionOpen_file_triggered()
     // =========================================================================
     
     // TODO:
-    // 1. Parallel executor with signals and slots for connectivity with 
+    // 1. Parallel executor with signals and slots for connectivity with
     // parent thread;
     // 2. Non-blocking execution with displaying progress of computation on
     // progressbar;
     
     size_t availThreads = std::thread::hardware_concurrency() / 2;
-    std::vector<std::thread> threadPool(availThreads);
     
-    // Create color maps pool ==================================================
+    // =========================================================================
+    // 1. Create color maps pool
+    // 2. Apply sizing parameters for created maps
+    // =========================================================================
     uint32_t step = windowSize / scale;
     size_t maps = (verticalSize - (verticalSize % scale)) / scale;
     for (size_t i = 0; i < maps; i++) {
         this->colorMaps.push_back(new QCPColorMap(this->ui->plotter->xAxis, \
                                                   this->ui->plotter->yAxis));
-    }
-    // =========================================================================
-    
-    // Calculating thread payloads =============================================
-    std::vector<std::pair<size_t, size_t>> threadRanges(threadPool.size());
-    size_t perThread = maps / threadPool.size();
-    size_t prevIndex = 0;
-    for (size_t t = 0; t < threadPool.size(); t++) {
-        if (t != threadPool.size() - 1) {
-            threadRanges.at(t) = std::make_pair(prevIndex, prevIndex + perThread);
-        } else {
-            threadRanges.at(t) = std::make_pair(prevIndex, maps - 1);
+        QCPColorMap * waterfallMap = this->colorMaps.back();
+        if (waterfallMap == nullptr) {
+            this->ui->statusbar->showMessage("{QCPColorMap allocation}: OOM");
+            break;
         }
-        prevIndex += perThread;
+        waterfallMap->data()->setSize(horizontalSize, 1);
+        waterfallMap->data()->setRange(QCPRange(0, horizontalSize), QCPRange(i, i + 1));
+
+        waterfallMap->setColorScale(colorScale); // associate the color map with the color scale
+        waterfallMap->setGradient(QCPColorGradient::gpGrayscale);
+        waterfallMap->rescaleDataRange();
     }
     // =========================================================================
-    
+
+    QVector<ColorMapWorker *> workers(availThreads);
+
     // =========================================================================
     // End of multithread solution =============================================
     // =========================================================================
@@ -140,20 +145,9 @@ void WaterfallViewer::on_actionOpen_file_triggered()
     
     std::vector<std::complex<float>> complexSignal(windowSize);
     std::vector<std::complex<float>> complexFFTRes(windowSize);
-    std::vector<float> windowData(windowSize);
     
-    size_t key = 0;
     for (size_t i = 0; i < verticalSize; i += windowSize / scale) {
-        this->colorMaps.push_back(new QCPColorMap(this->ui->plotter->xAxis, this->ui->plotter->yAxis));
-        QCPColorMap * waterfallMap = this->colorMaps.back();
-        if (waterfallMap == nullptr) {
-            this->ui->statusbar->showMessage("No more color maps...");
-            break;
-        }
-        waterfallMap->data()->setSize(horizontalSize, 1);
-        waterfallMap->data()->setRange(QCPRange(0, horizontalSize), QCPRange(key, key + 1));
-        key++;
-        
+
         if (i < (verticalSize - windowSize)) {
             std::transform(std::begin(signal) + i, std::begin(signal) + i + windowSize, std::begin(complexSignal), [](const iq16_t & item) {
                 return std::complex<float>((float)item.I, (float)item.Q);
@@ -174,19 +168,14 @@ void WaterfallViewer::on_actionOpen_file_triggered()
         // =====================================================================
         
         for (size_t l = 0; l < windowSize; l++) {
-            waterfallMap->data()->setCell(l, 0, std::abs(complexFFTRes.at(l)));
+            //            waterfallMap->data()->setCell(l, 0, std::abs(complexFFTRes.at(l)));
         }
-        
-        waterfallMap->setColorScale(colorScale); // associate the color map with the color scale
-        waterfallMap->setGradient(QCPColorGradient::gpGrayscale);
-        waterfallMap->rescaleDataRange();
+
     }
     
     // =========================================================================
     // End of single thread solution ===========================================
     // =========================================================================
-    
-    
     
     this->ui->plotter->rescaleAxes();
     this->ui->plotter->replot();

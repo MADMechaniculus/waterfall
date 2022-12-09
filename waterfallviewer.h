@@ -14,6 +14,9 @@
 #include "dsp.hpp"
 #include "qcustomplot.h"
 #include "consoleform.h"
+#include "customtoolbar.h"
+#include "colormapworker.h"
+#include "utilitytoolbar.h"
 
 #include <fstream>
 #include <algorithm>
@@ -23,54 +26,6 @@ QT_BEGIN_NAMESPACE
 namespace Ui { class WaterfallViewer; }
 QT_END_NAMESPACE
 
-class CustomToolBar : public QObject {
-    Q_OBJECT
-
-    QLineEdit * sampleRate;
-    QLineEdit * fftOrder;
-    QLineEdit * scaleFactor;    
-
-public:
-    CustomToolBar(QObject * parent) : QObject(parent) {
-        this->sampleRate = new QLineEdit();
-        this->sampleRate->setText("1100e6");
-        this->fftOrder = new QLineEdit();
-        this->fftOrder->setText("10");
-        this->scaleFactor = new QLineEdit();
-        this->scaleFactor->setText("8");
-
-        connect(sampleRate, &QLineEdit::textChanged, this, &CustomToolBar::onSampleRate_TextChanged);
-        connect(fftOrder, &QLineEdit::textChanged, this, &CustomToolBar::onFFTOrder_TextChanged);
-        connect(scaleFactor, &QLineEdit::textChanged, this, &CustomToolBar::onScaleFactor_TextChanged);
-    }
-    ~CustomToolBar() {}
-
-    void draw(QToolBar * rootBar) {
-        rootBar->addWidget(new QLabel("Sample rate"));
-        rootBar->addWidget(this->sampleRate);
-        rootBar->addSeparator();
-        rootBar->addWidget(new QLabel("FFT order"));
-        rootBar->addWidget(this->fftOrder);
-        rootBar->addSeparator();
-        rootBar->addWidget(new QLabel("Scale factor"));
-        rootBar->addWidget(this->scaleFactor);
-    }
-
-    void emitAll(void) {
-        emit this->sampleRate->textChanged(sampleRate->text());
-        emit this->fftOrder->textChanged(fftOrder->text());
-        emit this->scaleFactor->textChanged(scaleFactor->text());
-    }
-
-signals:
-    void onSampleRate_TextChanged(const QString & text);
-    void onFFTOrder_TextChanged(const QString & text);
-    void onScaleFactor_TextChanged(const QString & text);
-
-protected:
-
-};
-
 class WaterfallViewer : public QMainWindow
 {
     Q_OBJECT
@@ -78,6 +33,7 @@ class WaterfallViewer : public QMainWindow
     ConsoleForm * console;
     QCPColorScale * colorScale;
     CustomToolBar * toolBar;
+    UtilityToolBar * utilBar;
 
     bool selectionMode = false;
 
@@ -87,6 +43,7 @@ class WaterfallViewer : public QMainWindow
     std::pair<double, double> sPoint;
 
     std::vector<QCPColorMap *> colorMaps;
+    std::vector<std::complex<float>> complexSignal;
 
     double Fs = 1100e6;
     double ts = 0.0;
