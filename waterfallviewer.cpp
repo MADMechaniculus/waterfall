@@ -42,6 +42,9 @@ WaterfallViewer::WaterfallViewer(QWidget *parent)
     this->toolBar->emitAll();
 
     this->utilBar = new UtilityToolBar(this->ui->bottomToolBar, this);
+
+    this->availThreads = std::thread::hardware_concurrency() / 2;
+    this->workers.resize(availThreads);
 }
 
 WaterfallViewer::~WaterfallViewer()
@@ -106,8 +109,6 @@ void WaterfallViewer::on_actionOpen_file_triggered()
     // 2. Non-blocking execution with displaying progress of computation on
     // progressbar;
     
-    size_t availThreads = std::thread::hardware_concurrency() / 2;
-    
     // =========================================================================
     // 1. Create color maps pool
     // 2. Apply sizing parameters for created maps
@@ -130,8 +131,6 @@ void WaterfallViewer::on_actionOpen_file_triggered()
         waterfallMap->rescaleDataRange();
     }
     // =========================================================================
-
-    QVector<ColorMapWorker *> workers(availThreads);
 
     // =========================================================================
     // End of multithread solution =============================================

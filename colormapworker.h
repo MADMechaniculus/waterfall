@@ -33,6 +33,23 @@ class ColorMapWorker : public QObject
     uint64_t verticalSize{0};
     uint64_t horizontalSize{0};
 
+    uint32_t windowSize{0};
+    double scaleFactor{0.0};
+
+    struct checkList {
+        bool diap{false};
+        bool mapPool{false};
+        bool signalData{false};
+        bool windowSize{false};
+        bool scaleFactor{false};
+        bool dimensions{false};
+
+        bool validate(void) {
+            return diap && mapPool && signalData && windowSize && scaleFactor && dimensions;
+        }
+    };
+    struct checkList check;
+
 public:
     ColorMapWorker(std::vector<QCPColorMap*> * mapPool, \
                    std::vector<std::complex<float>> * signalData, \
@@ -47,20 +64,48 @@ public:
 
     }
 
-    void setVerticalSize(uint64_t vs) {
-        verticalSize = vs;
+    ColorMapWorker(QObject * parent = nullptr) : QObject(parent) {}
+
+    void setDimensions(uint64_t vs, uint64_t hs) {
+        this->verticalSize = vs;
+        this->horizontalSize = hs;
+        this->check.dimensions = true;
     }
 
-    void setHorizontalSize(uint64_t hs) {
-        horizontalSize = hs;
+    void setDiap(size_t startIndex, size_t stopIndex) {
+        this->start = startIndex;
+        this->stop = stopIndex;
+        this->check.diap = true;
+    }
+
+    void setSignalData(std::vector<std::complex<float>> * ptr) {
+        this->signal = ptr;
+        this->check.signalData = true;
+    }
+
+    void setWindowSize(uint32_t windowSize) {
+        this->windowSize = windowSize;
+        this->check.windowSize = true;
+    }
+
+    void setScaleFactor(double scaleFactor) {
+        this->scaleFactor = scaleFactor;
+        this->check.scaleFactor = true;
+    }
+
+    void setMapPool(std::vector<QCPColorMap *> * ptr) {
+        this->pool = ptr;
+        this->check.mapPool = true;
     }
 
 public slots:
     bool startProcessing(void) {
-        if (this->running.load() == false) {
-            this->stopped.store(false);
-            this->executorThread = std::thread(std::bind(&ColorMapWorker::process, this));
-            return true;
+        if (this->check.validate()) {
+            if (this->running.load() == false) {
+                this->stopped.store(false);
+                this->executorThread = std::thread(std::bind(&ColorMapWorker::process, this));
+                return true;
+            }
         }
         return false;
     }
@@ -96,6 +141,7 @@ protected:
 
             if (currentIndex < stop) {
                 // Processing
+
 
 
             }

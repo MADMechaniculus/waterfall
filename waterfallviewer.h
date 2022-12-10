@@ -30,6 +30,8 @@ class WaterfallViewer : public QMainWindow
 {
     Q_OBJECT
 
+    size_t availThreads{0};
+
     ConsoleForm * console;
     QCPColorScale * colorScale;
     CustomToolBar * toolBar;
@@ -55,6 +57,8 @@ class WaterfallViewer : public QMainWindow
     QVector<double> dotGraphVals;
 
     QCPGraph * dotGraph;
+
+    QVector<ColorMapWorker*> workers;
 
 public:
     WaterfallViewer(QWidget *parent = nullptr);
