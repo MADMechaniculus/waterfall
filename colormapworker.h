@@ -11,90 +11,73 @@
 #include <functional>
 #include <algorithm>
 #include <atomic>
+#include <mutex>
 
 #include "dsp.hpp"
+
+class ColorMapWorkerTask {
+protected:
+    std::vector<std::complex<float>> * signal;
+    QCPColorMap * targetMap;
+    size_t mapIndex;
+    size_t windowSize;
+    size_t step;
+
+    std::atomic_bool inWork{false};
+    std::atomic_bool done{false};
+    std::mutex taskMutex;
+public:
+    typedef std::vector<std::complex<float>> cplxSignal_t;
+
+    ColorMapWorkerTask() {}
+    ColorMapWorkerTask(cplxSignal_t * pSignal, \
+                       QCPColorMap * pColorMap, \
+                       size_t index, size_t wSize, \
+                       size_t step) : \
+        signal(pSignal), targetMap(pColorMap), \
+        mapIndex(index), windowSize(wSize), step(step) {}
+
+    bool takeWork(void) {
+        std::lock_guard<std::mutex> lock(this->taskMutex);
+        if (this->inWork.load() != true) {
+            this->inWork.store(true);
+            return true;
+        }
+        return false;
+    }
+
+    bool isWorkTaken(void) {
+        return this->inWork.load();
+    }
+
+    bool isWorkDone(void) {
+        return this->done.load();
+    }
+
+    friend class ColorMapWorker;
+};
 
 class ColorMapWorker : public QObject
 {
     Q_OBJECT
 
+    std::vector<ColorMapWorkerTask *> * tasks;
+
     std::thread executorThread;
     std::atomic_bool stopped{true};
     std::atomic_bool running{false};
 
-    std::vector<QCPColorMap *> * pool;
-    std::vector<std::complex<float>> * signal;
-
     std::vector<std::complex<float>> complexFFTRes;
-
-    size_t start{0};
-    size_t stop{0};
-
-    uint64_t verticalSize{0};
-    uint64_t horizontalSize{0};
-
-    uint32_t windowSize{0};
-    double scaleFactor{0.0};
-
-    struct checkList {
-        bool diap{false};
-        bool mapPool{false};
-        bool signalData{false};
-        bool windowSize{false};
-        bool scaleFactor{false};
-        bool dimensions{false};
-
-        bool validate(void) {
-            return diap && mapPool && signalData && \
-                    windowSize && scaleFactor && dimensions;
-        }
-    };
-    struct checkList check;
 
 public:
     ColorMapWorker(QObject * parent = nullptr) : QObject(parent) {}
 
-    void setDimensions(uint64_t vs, uint64_t hs) {
-        this->verticalSize = vs;
-        this->horizontalSize = hs;
-        this->check.dimensions = true;
-    }
-
-    void setDiap(size_t startIndex, size_t stopIndex) {
-        this->start = startIndex;
-        this->stop = stopIndex;
-        this->check.diap = true;
-    }
-
-    void setSignalData(std::vector<std::complex<float>> * ptr) {
-        this->signal = ptr;
-        this->check.signalData = true;
-    }
-
-    void setWindowSize(uint32_t windowSize) {
-        this->windowSize = windowSize;
-        complexFFTRes.resize(windowSize);
-        this->check.windowSize = true;
-    }
-
-    void setScaleFactor(double scaleFactor) {
-        this->scaleFactor = scaleFactor;
-        this->check.scaleFactor = true;
-    }
-
-    void setMapPool(std::vector<QCPColorMap *> * ptr) {
-        this->pool = ptr;
-        this->check.mapPool = true;
-    }
-
 public slots:
     bool startProcessing(void) {
-        if (this->check.validate()) {
-            if (this->running.load() == false) {
-                this->stopped.store(false);
-                this->executorThread = std::thread(std::bind(&ColorMapWorker::process, this));
-                return true;
-            }
+        if (this->running.load() == false) {
+            this->stopped.store(false);
+            this->executorThread = std::thread(std::bind(&ColorMapWorker::process, this));
+            return true;
         }
         return false;
     }
@@ -124,39 +107,27 @@ protected:
 
         this->running.store(true);
 
-        size_t currentIndex = start;
-
         while (this->stopped.load() != true) {
 
-            if (currentIndex < stop) {
-                // Processing
+            QCPColorMap * waterfallMap = this->pool->at(currentIndex);
+            uint32_t offset = this->windowSize * this->scaleFactor;
 
-                if (!(currentIndex + windowSize <= (this->signal->size() - 1))) {
-                    break;
-                }
+            stdComplexFFT(signal->begin() + currentIndex + offset, \
+                          std::begin(complexFFTRes), std::log2(windowSize));
 
-                QCPColorMap * waterfallMap = this->pool->at(currentIndex);
-                uint32_t offset = this->windowSize * this->scaleFactor;
+            // Half replacements ===================================================
+            std::vector<std::complex<float>> tmp{std::begin(complexFFTRes), \
+                        std::begin(complexFFTRes) + complexFFTRes.size() / 2};
+            std::copy(std::begin(complexFFTRes) + complexFFTRes.size() / 2, \
+                      std::end(complexFFTRes), std::begin(complexFFTRes));
+            std::copy(std::begin(tmp), std::end(tmp), \
+                      std::begin(complexFFTRes) + tmp.size());
+            // =====================================================================
 
-                stdComplexFFT(signal->begin() + currentIndex + offset, \
-                              std::begin(complexFFTRes), std::log2(windowSize));
-
-                // Half replacements ===================================================
-                std::vector<std::complex<float>> tmp{std::begin(complexFFTRes), \
-                            std::begin(complexFFTRes) + complexFFTRes.size() / 2};
-                std::copy(std::begin(complexFFTRes) + complexFFTRes.size() / 2, \
-                          std::end(complexFFTRes), std::begin(complexFFTRes));
-                std::copy(std::begin(tmp), std::end(tmp), \
-                          std::begin(complexFFTRes) + tmp.size());
-                // =====================================================================
-
-                for (size_t l = 0; l < windowSize; l++) {
-                    waterfallMap->data()->setCell(l, 0, std::abs(complexFFTRes.at(l)));
-                }
-
+            for (size_t l = 0; l < windowSize; l++) {
+                waterfallMap->data()->setCell(l, 0, std::abs(complexFFTRes.at(l)));
             }
 
-            currentIndex++;
 
             emit this->Progress();
         }

@@ -81,8 +81,6 @@ void WaterfallViewer::on_actionOpen_file_triggered()
     
     QFileInfo fileInfo(fileName);
     
-    std::deque<iq16_t> signal(fileInfo.size() / sizeof (iq16_t));
-    
     std::ifstream readFile(fileName.toStdString(), std::ios::binary);
     if (!readFile.is_open()) {
         this->ui->statusbar->showMessage("Error on opening read stream");
@@ -90,21 +88,18 @@ void WaterfallViewer::on_actionOpen_file_triggered()
     }
     
     // 1. Read data from file
+    iq16_t sample;
+    std::complex<float> tmp;
     for (size_t i = 0; i < fileInfo.size() / sizeof (iq16_t); i++) {
-        readFile.read((char*)&signal[i], sizeof (iq16_t));
+        readFile.read((char*)&sample, sizeof (iq16_t));
+        tmp.real((float)sample.I);
+        tmp.imag((float)sample.Q);
+        this->complexSignal.push_back(tmp);
     }
     readFile.close();
+    // 2. As result - complex signal without additional memory allocations
 
-    // 2. Convert read data to complex type
-    std::complex<float> tmp;
-    while (!signal.empty()) {
-        tmp.real((float)signal.front().I);
-        tmp.imag((float)signal.front().Q);
-        this->complexSignal.push_back(tmp);
-        signal.pop_front();
-    }
-
-    uint64_t verticalSize = signal.size() / 4;
+    uint64_t verticalSize = this->complexSignal.size() / 4;
     uint64_t horizontalSize = windowSize;
 
     ts = (double)2 / Fs * (double)windowSize / (double)scale;
