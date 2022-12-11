@@ -45,25 +45,13 @@ class ColorMapWorker : public QObject
         bool dimensions{false};
 
         bool validate(void) {
-            return diap && mapPool && signalData && windowSize && scaleFactor && dimensions;
+            return diap && mapPool && signalData && \
+                    windowSize && scaleFactor && dimensions;
         }
     };
     struct checkList check;
 
 public:
-    ColorMapWorker(std::vector<QCPColorMap*> * mapPool, \
-                   std::vector<std::complex<float>> * signalData, \
-                   size_t startIndex, size_t stopIndex, \
-                   uint32_t windowSize, \
-                   QObject * parent = nullptr) : \
-        QObject(parent), pool(mapPool), signal(signalData), \
-        start(startIndex), stop(stopIndex) {
-
-        // Allocating memory
-        complexFFTRes.resize(windowSize);
-
-    }
-
     ColorMapWorker(QObject * parent = nullptr) : QObject(parent) {}
 
     void setDimensions(uint64_t vs, uint64_t hs) {
@@ -85,6 +73,7 @@ public:
 
     void setWindowSize(uint32_t windowSize) {
         this->windowSize = windowSize;
+        complexFFTRes.resize(windowSize);
         this->check.windowSize = true;
     }
 
@@ -142,10 +131,34 @@ protected:
             if (currentIndex < stop) {
                 // Processing
 
+                if (!(currentIndex + windowSize <= (this->signal->size() - 1))) {
+                    break;
+                }
 
+                QCPColorMap * waterfallMap = this->pool->at(currentIndex);
+                uint32_t offset = this->windowSize * this->scaleFactor;
+
+                stdComplexFFT(signal->begin() + currentIndex + offset, \
+                              std::begin(complexFFTRes), std::log2(windowSize));
+
+                // Half replacements ===================================================
+                std::vector<std::complex<float>> tmp{std::begin(complexFFTRes), \
+                            std::begin(complexFFTRes) + complexFFTRes.size() / 2};
+                std::copy(std::begin(complexFFTRes) + complexFFTRes.size() / 2, \
+                          std::end(complexFFTRes), std::begin(complexFFTRes));
+                std::copy(std::begin(tmp), std::end(tmp), \
+                          std::begin(complexFFTRes) + tmp.size());
+                // =====================================================================
+
+                for (size_t l = 0; l < windowSize; l++) {
+                    waterfallMap->data()->setCell(l, 0, std::abs(complexFFTRes.at(l)));
+                }
 
             }
 
+            currentIndex++;
+
+            emit this->Progress();
         }
 
         this->running.store(true);

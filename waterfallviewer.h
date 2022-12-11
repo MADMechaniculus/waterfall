@@ -21,6 +21,7 @@
 #include <fstream>
 #include <algorithm>
 #include <iostream>
+#include <deque>
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class WaterfallViewer; }

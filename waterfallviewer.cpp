@@ -81,7 +81,7 @@ void WaterfallViewer::on_actionOpen_file_triggered()
     
     QFileInfo fileInfo(fileName);
     
-    std::vector<iq16_t> signal(fileInfo.size() / sizeof (iq16_t));
+    std::deque<iq16_t> signal(fileInfo.size() / sizeof (iq16_t));
     
     std::ifstream readFile(fileName.toStdString(), std::ios::binary);
     if (!readFile.is_open()) {
@@ -89,26 +89,38 @@ void WaterfallViewer::on_actionOpen_file_triggered()
         return;
     }
     
-    readFile.read((char*)signal.data(), fileInfo.size());
+    // 1. Read data from file
+    for (size_t i = 0; i < fileInfo.size() / sizeof (iq16_t); i++) {
+        readFile.read((char*)&signal[i], sizeof (iq16_t));
+    }
     readFile.close();
-    
+
+    // 2. Convert read data to complex type
+    std::complex<float> tmp;
+    while (!signal.empty()) {
+        tmp.real((float)signal.front().I);
+        tmp.imag((float)signal.front().Q);
+        this->complexSignal.push_back(tmp);
+        signal.pop_front();
+    }
+
     uint64_t verticalSize = signal.size() / 4;
     uint64_t horizontalSize = windowSize;
-    
+
     ts = (double)2 / Fs * (double)windowSize / (double)scale;
-    
+
     this->cleanPlotter();
-    
+
     // =========================================================================
     // Multithread solution ====================================================
     // =========================================================================
-    
+
     // TODO:
     // 1. Parallel executor with signals and slots for connectivity with
     // parent thread;
     // 2. Non-blocking execution with displaying progress of computation on
     // progressbar;
-    
+
     // =========================================================================
     // 1. Create color maps pool
     // 2. Apply sizing parameters for created maps
@@ -132,52 +144,14 @@ void WaterfallViewer::on_actionOpen_file_triggered()
     }
     // =========================================================================
 
-    // =========================================================================
-    // End of multithread solution =============================================
-    // =========================================================================
-    
-    
-    
-    // =========================================================================
-    // Start of single thread solution =========================================
-    // =========================================================================
-    
-    std::vector<std::complex<float>> complexSignal(windowSize);
-    std::vector<std::complex<float>> complexFFTRes(windowSize);
-    
-    for (size_t i = 0; i < verticalSize; i += windowSize / scale) {
-
-        if (i < (verticalSize - windowSize)) {
-            std::transform(std::begin(signal) + i, std::begin(signal) + i + windowSize, std::begin(complexSignal), [](const iq16_t & item) {
-                return std::complex<float>((float)item.I, (float)item.Q);
-            });
-        } else {
-            break;
-        }
-        
-        stdComplexFFT(std::begin(complexSignal), std::begin(complexFFTRes), std::log2(windowSize));
-        
-        // Half replacements ===================================================
-        std::vector<std::complex<float>> tmp{std::begin(complexFFTRes), \
-                    std::begin(complexFFTRes) + complexFFTRes.size() / 2};
-        std::copy(std::begin(complexFFTRes) + complexFFTRes.size() / 2, \
-                  std::end(complexFFTRes), std::begin(complexFFTRes));
-        std::copy(std::begin(tmp), std::end(tmp), \
-                  std::begin(complexFFTRes) + tmp.size());
-        // =====================================================================
-        
-        for (size_t l = 0; l < windowSize; l++) {
-            //            waterfallMap->data()->setCell(l, 0, std::abs(complexFFTRes.at(l)));
-        }
-
+    for (size_t i = 0; i < this->availThreads; i++) {
+        this->workers[i] = new ColorMapWorker(this);
+        this->workers[i]->setWindowSize(windowSize);
     }
-    
-    // =========================================================================
-    // End of single thread solution ===========================================
-    // =========================================================================
-    
-    this->ui->plotter->rescaleAxes();
-    this->ui->plotter->replot();
+
+    // This actions must be called after all calculations
+    //    this->ui->plotter->rescaleAxes();
+    //    this->ui->plotter->replot();
 }
 
 void WaterfallViewer::plotterMousePressSlot(QMouseEvent *event)
