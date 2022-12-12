@@ -10,9 +10,6 @@ WaterfallViewer::WaterfallViewer(QWidget *parent)
     qRegisterMetaType<QCPColorGradient>("QCPColorGradient");
     qRegisterMetaType<QCPRange>("QCPRange");
     
-    this->console = new ConsoleForm(this);
-    connect(this, &WaterfallViewer::printConsole, console, &ConsoleForm::appendConsole);
-    
     // Connect plotter to mousePress slot
     connect(this->ui->plotter, &QCustomPlot::mousePress, this, &WaterfallViewer::plotterMousePressSlot);
     
@@ -66,9 +63,6 @@ WaterfallViewer::~WaterfallViewer()
 
 void WaterfallViewer::on_actionOpen_file_triggered()
 {
-    const uint32_t windowSize = std::pow(2, this->fftOrder);
-    fftResolution = Fs / 2.0 / (double)windowSize;
-    
 #ifdef WIN32
     QString fileName = QFileDialog::getOpenFileName(this,
                                                     tr("Open record"), "C:\\", \
@@ -86,67 +80,12 @@ void WaterfallViewer::on_actionOpen_file_triggered()
         return;
     }
     
-    QFileInfo fileInfo(fileName);
-    
-    std::ifstream readFile(fileName.toStdString(), std::ios::binary);
-    if (!readFile.is_open()) {
-        this->ui->statusbar->showMessage("Error on opening read stream");
-        return;
-    }
-    
-    iq16_t sample;
-    std::complex<float> tmp;
-    bool pushing = false;
-    if ((this->complexSignal.size() != (fileInfo.size() / sizeof (iq16_t))) && !complexSignal.empty()) {
-        this->complexSignal.resize(fileInfo.size() / sizeof (iq16_t));
-    } else {
-        pushing = true;
-    }
-    for (size_t i = 0; i < fileInfo.size() / sizeof (iq16_t); i++) {
-        readFile.read((char*)&sample, sizeof (iq16_t));
-        tmp.real((float)sample.I);
-        tmp.imag((float)sample.Q);
-        if (pushing)
-            this->complexSignal.push_back(tmp);
-        else
-            this->complexSignal[i] = tmp;
-    }
-    readFile.close();
+    this->selectedFile = fileName;
 
-    uint64_t verticalSize = this->complexSignal.size();
+    this->filesVector.emplace_back(fileName);
+    this->updateFileList();
 
-    ts = (double)2 / Fs * (double)windowSize * scale;
-
-    size_t maps = ( verticalSize - (verticalSize % (uint64_t)(windowSize * scale))) / (scale * windowSize);
-
-    tasks.resize(maps);
-
-    this->cleanPlotter();
-
-    colorMap = new QCPColorMap(this->ui->plotter->xAxis, \
-                               this->ui->plotter->yAxis);
-
-    colorMap->data()->setSize(windowSize, maps);
-    colorMap->data()->setRange(QCPRange(0, windowSize), QCPRange(0, maps));
-    colorMap->setColorScale(this->colorScale);
-    colorMap->setInterpolate(true);
-    colorMap->setGradient(QCPColorGradient::gpSpectrum);
-
-    for (size_t i = 0; i < maps; i++) {
-        tasks[i] = new ColorMapWorkerTask(&this->complexSignal, \
-                                          this->colorMap, \
-                                          i, windowSize, windowSize * scale);
-    }
-
-    this->utilBar->resetProgress();
-    this->utilBar->setMode(UtilityToolBar::UtilityToolBar_Progress_Mode_DataProcessing);
-    this->utilBar->setTotalOperations(maps);
-
-    this->ui->plotter->rescaleAxes();
-
-    for (ColorMapWorker * item : this->workers) {
-        item->startProcessing();
-    }
+    this->startProcessing();
 }
 
 void WaterfallViewer::plotterMousePressSlot(QMouseEvent *event)
@@ -177,17 +116,17 @@ void WaterfallViewer::plotterMousePressSlot(QMouseEvent *event)
             
             QString msg = QString("Duration: ");
             msg += QString::number( duration ) + " us;";
-            emit printConsole(msg);
+            this->appendConsole(msg);
             
             msg.clear();
             msg = QString("Width: ");
             msg += QString::number( width ) + " MHz;";
-            emit printConsole(msg);
+            this->appendConsole(msg);
             
             msg.clear();
             msg = QString("Speed: ");
             msg += QString::number( width / duration ) + " MHz/us;";
-            emit printConsole(msg);
+            this->appendConsole(msg);
             
             this->clickCounter = 0;
         }
@@ -196,13 +135,6 @@ void WaterfallViewer::plotterMousePressSlot(QMouseEvent *event)
         this->ui->plotter->replot();
     }
 }
-
-
-void WaterfallViewer::on_actionOpen_triggered()
-{
-    this->console->show();
-}
-
 
 void WaterfallViewer::on_actionSelection_triggered(bool checked)
 {
@@ -288,7 +220,106 @@ void WaterfallViewer::cleanPlotter() {
     this->dotGraph->setPen(dotPen);
 }
 
-void WaterfallViewer::onColorMapsCreated()
+void WaterfallViewer::startProcessing()
 {
-    // EMPTY
+    const uint32_t windowSize = std::pow(2, this->fftOrder);
+    fftResolution = Fs / 2.0 / (double)windowSize;
+
+    QFileInfo fileInfo(this->selectedFile);
+
+    std::ifstream readFile(this->selectedFile.toStdString(), std::ios::binary);
+    if (!readFile.is_open()) {
+        this->ui->statusbar->showMessage("Error on opening read stream");
+        return;
+    }
+
+    iq16_t sample;
+    std::complex<float> tmp;
+    bool pushing = false;
+    if ((this->complexSignal.size() != (fileInfo.size() / sizeof (iq16_t))) && !complexSignal.empty()) {
+        this->complexSignal.resize(fileInfo.size() / sizeof (iq16_t));
+    } else {
+        pushing = true;
+    }
+    for (size_t i = 0; i < fileInfo.size() / sizeof (iq16_t); i++) {
+        readFile.read((char*)&sample, sizeof (iq16_t));
+        tmp.real((float)sample.I);
+        tmp.imag((float)sample.Q);
+        if (pushing)
+            this->complexSignal.push_back(tmp);
+        else
+            this->complexSignal[i] = tmp;
+    }
+    readFile.close();
+
+    uint64_t verticalSize = this->complexSignal.size();
+
+    ts = (double)2 / Fs * (double)windowSize * scale;
+
+    size_t maps = ( verticalSize - (verticalSize % (uint64_t)(windowSize * scale))) / (scale * windowSize);
+
+    tasks.resize(maps);
+
+    this->cleanPlotter();
+
+    colorMap = new QCPColorMap(this->ui->plotter->xAxis, \
+                               this->ui->plotter->yAxis);
+
+    colorMap->data()->setSize(windowSize, maps);
+    colorMap->data()->setRange(QCPRange(0, windowSize), QCPRange(0, maps));
+    colorMap->setColorScale(this->colorScale);
+    colorMap->setInterpolate(true);
+    colorMap->setGradient(QCPColorGradient::gpSpectrum);
+
+    for (size_t i = 0; i < maps; i++) {
+        tasks[i] = new ColorMapWorkerTask(&this->complexSignal, \
+                                          this->colorMap, \
+                                          i, windowSize, windowSize * scale);
+    }
+
+    this->utilBar->resetProgress();
+    this->utilBar->setMode(UtilityToolBar::UtilityToolBar_Progress_Mode_DataProcessing);
+    this->utilBar->setTotalOperations(maps);
+
+    this->ui->plotter->rescaleAxes();
+
+    for (ColorMapWorker * item : this->workers) {
+        item->startProcessing();
+    }
 }
+
+void WaterfallViewer::updateFileList() {
+    this->ui->fileList->clear();
+    for (size_t i = 0; i < this->filesVector.size(); i++) {
+        this->ui->fileList->addItem(this->filesVector[i].getFilePath());
+    }
+}
+
+void WaterfallViewer::on_clearFileListButton_clicked()
+{
+    this->filesVector.clear();
+    this->updateFileList();
+}
+
+void WaterfallViewer::on_reprocessButton_clicked()
+{
+    if (!this->selectedFile.isEmpty())
+        this->startProcessing();
+    else
+        this->ui->statusbar->showMessage("No target file selected");
+}
+
+void WaterfallViewer::on_fileList_currentRowChanged(int currentRow)
+{
+    if (currentRow == -1) {
+        this->selectedFile = "";
+        return;
+    }
+    this->selectedFile = this->filesVector.at(currentRow).getFilePath();
+}
+
+void WaterfallViewer::appendConsole(QString message)
+{
+    this->ui->consolePanel->appendPlainText(message);
+}
+

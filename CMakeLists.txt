@@ -23,10 +23,6 @@ set(PROJECT_SOURCES
     waterfallviewer.ui
     dsp.hpp
 
-    consoleform.h
-    consoleform.cpp
-    consoleform.ui
-
     qcustomplot.cpp
     qcustomplot.h
 
@@ -39,32 +35,30 @@ set(PROJECT_SOURCES
     utilitytoolbar.h
     utilitytoolbar.cpp
 
-#    mtstatus.h
-#    mtstatus.cpp
-#    mtstatus.ui
-    )
+    resources.qrc
+)
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
     qt_add_executable(waterfall
         MANUAL_FINALIZATION
         ${PROJECT_SOURCES}
-        )
-    # Define target properties for Android with Qt 6 as:
-    #    set_property(TARGET waterfall APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
-    #                 ${CMAKE_CURRENT_SOURCE_DIR}/android)
-    # For more information, see https://doc.qt.io/qt-6/qt-add-executable.html#target-creation
+    )
+# Define target properties for Android with Qt 6 as:
+#    set_property(TARGET waterfall APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
+#                 ${CMAKE_CURRENT_SOURCE_DIR}/android)
+# For more information, see https://doc.qt.io/qt-6/qt-add-executable.html#target-creation
 else()
     if(ANDROID)
         add_library(waterfall SHARED
             ${PROJECT_SOURCES}
-            )
-        # Define properties for Android with Qt 5 after find_package() calls as:
-        #    set(ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android")
-    else()
-        add_executable(waterfall
-            ${PROJECT_SOURCES}
-            )
-    endif()
+        )
+    # Define properties for Android with Qt 5 after find_package() calls as:
+    #    set(ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android")
+else()
+    add_executable(waterfall
+        ${PROJECT_SOURCES}
+    )
+endif()
 endif()
 
 target_link_libraries(waterfall PRIVATE
@@ -78,7 +72,7 @@ set_target_properties(waterfall PROPERTIES
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
     MACOSX_BUNDLE TRUE
     WIN32_EXECUTABLE TRUE
-    )
+)
 
 if(QT_VERSION_MAJOR EQUAL 6)
     qt_finalize_executable(waterfall)

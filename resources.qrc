@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/icons">
+        <file>resources/clear_icon_x32.png</file>
+    </qresource>
+</RCC>

@@ -30,13 +30,32 @@ QT_BEGIN_NAMESPACE
 namespace Ui { class WaterfallViewer; }
 QT_END_NAMESPACE
 
+class FileListItem {
+protected:
+    QString filePath;
+
+public:
+    FileListItem(QString path) {
+        this->filePath = path;
+    }
+    FileListItem(const FileListItem & other) {
+        this->filePath = other.filePath;
+    }
+    FileListItem(const FileListItem && other) {
+        this->filePath = other.filePath;
+    }
+
+    QString getFilePath() {
+        return this->filePath;
+    }
+};
+
 class WaterfallViewer : public QMainWindow
 {
     Q_OBJECT
 
     size_t availThreads{0};
 
-    ConsoleForm * console;
     QCPColorScale * colorScale;
     CustomToolBar * toolBar;
     UtilityToolBar * utilBar;
@@ -62,6 +81,7 @@ class WaterfallViewer : public QMainWindow
     QCPGraph * dotGraph;
 
     QVector<ColorMapWorker*> workers;
+    std::vector<FileListItem> filesVector;
     std::vector<ColorMapWorkerTask *> tasks;
 
     QImage * image;
@@ -69,17 +89,17 @@ class WaterfallViewer : public QMainWindow
 
     std::atomic<float> maxColorValue{0};
 
+    QString selectedFile;
+
 public:
     WaterfallViewer(QWidget *parent = nullptr);
     ~WaterfallViewer();
 
 signals:
-    void printConsole(QString message);
 
 private slots:
     void on_actionOpen_file_triggered();
     void plotterMousePressSlot(QMouseEvent * event);
-    void on_actionOpen_triggered();
     void on_actionSelection_triggered(bool checked);
 
     void sampleRateChanged(const QString & text);
@@ -87,13 +107,21 @@ private slots:
     void scaleFactorChanged(const QString & text);
 
     void onProcessingComplete(void);
-    void onColorMapsCreated(void);
+
+    void updateFileList(void);
+    void on_clearFileListButton_clicked();
+
+    void on_reprocessButton_clicked();
+
+    void on_fileList_currentRowChanged(int currentRow);
+
+    void appendConsole(QString message);
 
 private:
     Ui::WaterfallViewer *ui;
 
     void cleanPlotter(void);
-
     void colorMapCreation(void);
+    void startProcessing(void);
 };
 #endif // WATERFALLVIEWER_H
