@@ -6,7 +6,7 @@ CustomToolBar::CustomToolBar(QObject *parent) : QObject(parent) {
     this->fftOrder = new QLineEdit();
     this->fftOrder->setText("10");
     this->scaleFactor = new QLineEdit();
-    this->scaleFactor->setText("8");
+    this->scaleFactor->setText("0.1");
 
     connect(sampleRate, &QLineEdit::textChanged, this, &CustomToolBar::onSampleRate_TextChanged);
     connect(fftOrder, &QLineEdit::textChanged, this, &CustomToolBar::onFFTOrder_TextChanged);

@@ -22,6 +22,7 @@ WaterfallViewer::WaterfallViewer(QWidget *parent)
     customPlot->axisRect()->setupFullAxesBox(true);
     customPlot->xAxis->setLabel("Frequency");
     customPlot->yAxis->setLabel("Time");
+    customPlot->yAxis->setRangeReversed(true);
     
     // Plotter color scale installation
     colorScale = new QCPColorScale(this->ui->plotter);
@@ -42,9 +43,19 @@ WaterfallViewer::WaterfallViewer(QWidget *parent)
     this->toolBar->emitAll();
 
     this->utilBar = new UtilityToolBar(this->ui->bottomToolBar, this);
+    this->utilBar->resetProgress();
 
+    connect(this->utilBar, &UtilityToolBar::completeProcessing, this, &WaterfallViewer::onProcessingComplete);
+
+    // Create workers ==========================================================
     this->availThreads = std::thread::hardware_concurrency() / 2;
     this->workers.resize(availThreads);
+    for (size_t i = 0; i < this->availThreads; i++) {
+        this->workers[i] = new ColorMapWorker(this);
+        this->workers[i]->connectTasks(&this->tasks);
+        connect(this->workers[i], &ColorMapWorker::Progress, this->utilBar, &UtilityToolBar::increaseProgress);
+    }
+    // =========================================================================
 }
 
 WaterfallViewer::~WaterfallViewer()
@@ -55,11 +66,7 @@ WaterfallViewer::~WaterfallViewer()
 
 void WaterfallViewer::on_actionOpen_file_triggered()
 {
-    return;
-
     const uint32_t windowSize = std::pow(2, this->fftOrder);
-    const uint32_t scale = this->scale;
-    
     fftResolution = Fs / 2.0 / (double)windowSize;
     
 #ifdef WIN32
@@ -87,66 +94,59 @@ void WaterfallViewer::on_actionOpen_file_triggered()
         return;
     }
     
-    // 1. Read data from file
     iq16_t sample;
     std::complex<float> tmp;
+    bool pushing = false;
+    if ((this->complexSignal.size() != (fileInfo.size() / sizeof (iq16_t))) && !complexSignal.empty()) {
+        this->complexSignal.resize(fileInfo.size() / sizeof (iq16_t));
+    } else {
+        pushing = true;
+    }
     for (size_t i = 0; i < fileInfo.size() / sizeof (iq16_t); i++) {
         readFile.read((char*)&sample, sizeof (iq16_t));
         tmp.real((float)sample.I);
         tmp.imag((float)sample.Q);
-        this->complexSignal.push_back(tmp);
+        if (pushing)
+            this->complexSignal.push_back(tmp);
+        else
+            this->complexSignal[i] = tmp;
     }
     readFile.close();
-    // 2. As result - complex signal without additional memory allocations
 
-    uint64_t verticalSize = this->complexSignal.size() / 4;
-    uint64_t horizontalSize = windowSize;
+    uint64_t verticalSize = this->complexSignal.size();
 
-    ts = (double)2 / Fs * (double)windowSize / (double)scale;
+    ts = (double)2 / Fs * (double)windowSize * scale;
+
+    size_t maps = ( verticalSize - (verticalSize % (uint64_t)(windowSize * scale))) / (scale * windowSize);
+
+    tasks.resize(maps);
 
     this->cleanPlotter();
 
-    // =========================================================================
-    // Multithread solution ====================================================
-    // =========================================================================
+    colorMap = new QCPColorMap(this->ui->plotter->xAxis, \
+                               this->ui->plotter->yAxis);
 
-    // TODO:
-    // 1. Parallel executor with signals and slots for connectivity with
-    // parent thread;
-    // 2. Non-blocking execution with displaying progress of computation on
-    // progressbar;
+    colorMap->data()->setSize(windowSize, maps);
+    colorMap->data()->setRange(QCPRange(0, windowSize), QCPRange(0, maps));
+    colorMap->setColorScale(this->colorScale);
+    colorMap->setInterpolate(true);
+    colorMap->setGradient(QCPColorGradient::gpSpectrum);
 
-    // =========================================================================
-    // 1. Create color maps pool
-    // 2. Apply sizing parameters for created maps
-    // =========================================================================
-    uint32_t step = windowSize / scale;
-    size_t maps = (verticalSize - (verticalSize % scale)) / scale;
     for (size_t i = 0; i < maps; i++) {
-        this->colorMaps.push_back(new QCPColorMap(this->ui->plotter->xAxis, \
-                                                  this->ui->plotter->yAxis));
-        QCPColorMap * waterfallMap = this->colorMaps.back();
-        if (waterfallMap == nullptr) {
-            this->ui->statusbar->showMessage("{QCPColorMap allocation}: OOM");
-            break;
-        }
-        waterfallMap->data()->setSize(horizontalSize, 1);
-        waterfallMap->data()->setRange(QCPRange(0, horizontalSize), QCPRange(i, i + 1));
-
-        waterfallMap->setColorScale(colorScale); // associate the color map with the color scale
-        waterfallMap->setGradient(QCPColorGradient::gpGrayscale);
-        waterfallMap->rescaleDataRange();
-    }
-    // =========================================================================
-
-    for (size_t i = 0; i < this->availThreads; i++) {
-        this->workers[i] = new ColorMapWorker(this);
-        this->workers[i]->setWindowSize(windowSize);
+        tasks[i] = new ColorMapWorkerTask(&this->complexSignal, \
+                                          this->colorMap, \
+                                          i, windowSize, windowSize * scale);
     }
 
-    // This actions must be called after all calculations
-    //    this->ui->plotter->rescaleAxes();
-    //    this->ui->plotter->replot();
+    this->utilBar->resetProgress();
+    this->utilBar->setMode(UtilityToolBar::UtilityToolBar_Progress_Mode_DataProcessing);
+    this->utilBar->setTotalOperations(maps);
+
+    this->ui->plotter->rescaleAxes();
+
+    for (ColorMapWorker * item : this->workers) {
+        item->startProcessing();
+    }
 }
 
 void WaterfallViewer::plotterMousePressSlot(QMouseEvent *event)
@@ -238,31 +238,57 @@ void WaterfallViewer::fftOrderChanged(const QString &text)
 void WaterfallViewer::scaleFactorChanged(const QString &text)
 {
     bool ret = false;
-    double scaleFactor = text.toUInt(&ret);
+    double scaleFactor = text.toDouble(&ret);
     if (ret) {
         this->scale = scaleFactor;
         this->ui->statusbar->showMessage("New scale factor applied");
     } else {
-        this->scale = 8;
+        this->scale = 0.1;
         this->ui->statusbar->showMessage("Wrong scale factor format [default " + QString::number(scale) + "]");
+    }
+}
+
+void WaterfallViewer::onProcessingComplete()
+{
+    std::vector<float> maximums(this->workers.size());
+    for (size_t i = 0; i < this->workers.size(); i++) {
+        maximums[i] = this->workers[i]->getMaxValue();
+    }
+
+    colorMap->setDataRange(QCPRange(0, *std::max_element(std::begin(maximums), \
+                                                         std::end(maximums))));
+
+    this->ui->plotter->rescaleAxes();
+    this->ui->plotter->replot();
+
+    for (ColorMapWorkerTask * item : this->tasks) {
+        if (item != nullptr)
+            delete item;
+    }
+    tasks.clear();
+
+    for (ColorMapWorker * item : this->workers) {
+        if (item != nullptr) {
+            item->abortProcessing();
+        }
     }
 }
 
 void WaterfallViewer::cleanPlotter() {
     this->ui->plotter->clearPlottables();
     this->ui->plotter->clearGraphs();
-    
+
     this->dotGraph = this->ui->plotter->addGraph();
     this->dotGraph->setLayer("Dots");
     this->dotGraph->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssPlusCircle, 100));
     this->dotGraph->setLineStyle((QCPGraph::LineStyle::lsNone));
-    
+
     QPen dotPen = QPen(Qt::black);
     dotPen.setWidth(5);
     this->dotGraph->setPen(dotPen);
-    
-    if (!this->colorMaps.empty()) {
-        this->colorMaps.clear();
-    }
 }
 
+void WaterfallViewer::onColorMapsCreated()
+{
+    // EMPTY
+}

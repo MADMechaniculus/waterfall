@@ -11,7 +11,7 @@
 #include <windows.h>
 #include <tchar.h>
 #else
-
+#include <sys/sysinfo.h>
 #endif
 
 class UtilityToolBar : public QObject
@@ -27,7 +27,9 @@ class UtilityToolBar : public QObject
     QTimer * processingTimer;
 
     uint32_t totalOps;
-    uint32_t currentOpsDone;
+    std::atomic<uint32_t> currentOpsDone;
+
+    uint16_t mode = 0;
 
 #ifdef WIN32
     uint64_t getTotalMemory(void) {
@@ -51,14 +53,44 @@ class UtilityToolBar : public QObject
         return statex.dwMemoryLoad;
     }
 #else
+    uint64_t getTotalMemory(void) {
+        struct sysinfo info;
+        sysinfo(&info);
 
+        return info.totalram;
+    }
+
+    uint64_t getFreeMemory(void) {
+        struct sysinfo info;
+        sysinfo(&info);
+
+        return info.freeram;
+    }
+
+    uint32_t getMemoryLoad(void) {
+        struct sysinfo info;
+        sysinfo(&info);
+
+        uint64_t value = (info.totalram - info.freeram) * info.mem_unit;
+        uint32_t ret = (double)value / (double)info.totalram * 100.0;
+
+        return ret;
+    }
 #endif
 
 public:
+    enum UtilityToolBar_Progress_Mode_ : uint16_t {
+        UtilityToolBar_Progress_Mode_DataProcessing = 0,
+        UtilityToolBar_Progress_Mode_ColorMapCreating
+    };
+
     explicit UtilityToolBar(QToolBar * parentToolBar, QObject *parent = nullptr) : \
         parentToolBar(parentToolBar), QObject(parent) {
 
+        mode = UtilityToolBar_Progress_Mode_DataProcessing;
+
         this->processingBar = new QProgressBar();
+        this->processingBar->setRange(0, 100);
         this->memoryUsage = new QProgressBar();
         this->memoryUsage->setRange(0, 100);
 
@@ -75,9 +107,14 @@ public:
 
         this->memoryUsageTimer->setInterval(500);
         this->memoryUsageTimer->start();
+
+        this->processingTimer->setInterval(100);
+        this->processingTimer->start();
     }
 
 signals:
+
+    void completeProcessing(void);
 
 public slots:
     void setTotalOperations(uint32_t opsCount) {
@@ -85,12 +122,20 @@ public slots:
     }
 
     void resetProgress(void) {
-        this->processingBar->reset();
-        this->processingTimer->stop();
+        this->processingBar->setValue(0);
+        totalOps = 0;
+        currentOpsDone.store(0);
     }
 
     void increaseProgress(void) {
-        currentOpsDone++;
+        currentOpsDone.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    void setMode(uint16_t newMode) {
+        if (newMode > UtilityToolBar_Progress_Mode_ColorMapCreating) {
+            this->mode = UtilityToolBar_Progress_Mode_ColorMapCreating;
+        }
+        this->mode = newMode;
     }
 
 protected slots:
@@ -99,7 +144,13 @@ protected slots:
     }
 
     void updateProcessingBar(void) {
-        this->processingBar->setValue((int)((double)currentOpsDone / (double)totalOps * 100.0));
+        if (totalOps != 0) {
+            this->processingBar->setValue((int)((double)currentOpsDone / (double)totalOps * 100.0));
+            if ((this->currentOpsDone.load() == this->totalOps) && (this->mode == UtilityToolBar_Progress_Mode_DataProcessing)) {
+                emit this->completeProcessing();
+                this->resetProgress();
+            }
+        }
     }
 };
 

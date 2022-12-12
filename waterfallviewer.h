@@ -10,6 +10,9 @@
 #include <QLabel>
 #include <QMetaType>
 #include <QProgressBar>
+#include <QFuture>
+#include <QtConcurrent/QtConcurrent>
+#include <QImage>
 
 #include "dsp.hpp"
 #include "qcustomplot.h"
@@ -45,14 +48,13 @@ class WaterfallViewer : public QMainWindow
     std::pair<double, double> fPoint;
     std::pair<double, double> sPoint;
 
-    std::vector<QCPColorMap *> colorMaps;
     std::vector<std::complex<float>> complexSignal;
 
     double Fs = 1100e6;
     double ts = 0.0;
     double fftOrder = 0.0;
     double fftResolution = 0.0;
-    uint32_t scale = 0;
+    double scale = 0.0;
 
     QVector<double> dotGraphKeys;
     QVector<double> dotGraphVals;
@@ -60,6 +62,12 @@ class WaterfallViewer : public QMainWindow
     QCPGraph * dotGraph;
 
     QVector<ColorMapWorker*> workers;
+    std::vector<ColorMapWorkerTask *> tasks;
+
+    QImage * image;
+    QCPColorMap * colorMap;
+
+    std::atomic<float> maxColorValue{0};
 
 public:
     WaterfallViewer(QWidget *parent = nullptr);
@@ -78,9 +86,14 @@ private slots:
     void fftOrderChanged(const QString & text);
     void scaleFactorChanged(const QString & text);
 
+    void onProcessingComplete(void);
+    void onColorMapsCreated(void);
+
 private:
     Ui::WaterfallViewer *ui;
 
     void cleanPlotter(void);
+
+    void colorMapCreation(void);
 };
 #endif // WATERFALLVIEWER_H

@@ -2,6 +2,7 @@
 #define COLORMAPWORKER_H
 
 #include <QObject>
+#include <QColor>
 
 #include <qcustomplot.h>
 
@@ -12,6 +13,7 @@
 #include <algorithm>
 #include <atomic>
 #include <mutex>
+#include <iostream>
 
 #include "dsp.hpp"
 
@@ -19,22 +21,23 @@ class ColorMapWorkerTask {
 protected:
     std::vector<std::complex<float>> * signal;
     QCPColorMap * targetMap;
+
     size_t mapIndex;
     size_t windowSize;
     size_t step;
 
     std::atomic_bool inWork{false};
-    std::atomic_bool done{false};
     std::mutex taskMutex;
+
 public:
     typedef std::vector<std::complex<float>> cplxSignal_t;
 
     ColorMapWorkerTask() {}
     ColorMapWorkerTask(cplxSignal_t * pSignal, \
-                       QCPColorMap * pColorMap, \
+                       QCPColorMap * targetMap, \
                        size_t index, size_t wSize, \
                        size_t step) : \
-        signal(pSignal), targetMap(pColorMap), \
+        signal(pSignal), targetMap(targetMap), \
         mapIndex(index), windowSize(wSize), step(step) {}
 
     bool takeWork(void) {
@@ -46,14 +49,6 @@ public:
         return false;
     }
 
-    bool isWorkTaken(void) {
-        return this->inWork.load();
-    }
-
-    bool isWorkDone(void) {
-        return this->done.load();
-    }
-
     friend class ColorMapWorker;
 };
 
@@ -62,6 +57,7 @@ class ColorMapWorker : public QObject
     Q_OBJECT
 
     std::vector<ColorMapWorkerTask *> * tasks;
+    float maxValue{0};
 
     std::thread executorThread;
     std::atomic_bool stopped{true};
@@ -70,25 +66,37 @@ class ColorMapWorker : public QObject
     std::vector<std::complex<float>> complexFFTRes;
 
 public:
-    ColorMapWorker(QObject * parent = nullptr) : QObject(parent) {}
+    ColorMapWorker(QObject * parent = nullptr) : QObject(parent) {
+        complexFFTRes.reserve(std::pow(2, 16));
+    }
+
+    void connectTasks(std::vector<ColorMapWorkerTask *> * tskPool) {
+        this->tasks = tskPool;
+    }
+
+    float getMaxValue(void) {
+        return maxValue;
+    }
 
 public slots:
     bool startProcessing(void) {
         if (this->running.load() == false) {
+            maxValue = 0;
             this->stopped.store(false);
-            this->executorThread = std::thread(std::bind(&ColorMapWorker::process, this));
+            try {
+                this->executorThread = std::thread(std::bind(&ColorMapWorker::process, this));
+            } catch (const std::exception &ex) {
+                std::cerr << ex.what() << std::endl << std::flush;
+            }
             return true;
         }
         return false;
     }
 
-    bool abortProcessing(void) {
-        if (this->running.load() == true) {
-            this->stopped.store(true);
+    void abortProcessing(void) {
+        this->stopped.store(true);
+        if (this->executorThread.joinable())
             this->executorThread.join();
-            return true;
-        }
-        return false;
     }
 signals:
     /**
@@ -107,32 +115,51 @@ protected:
 
         this->running.store(true);
 
+        size_t workIndex = 0;
+
         while (this->stopped.load() != true) {
 
-            QCPColorMap * waterfallMap = this->pool->at(currentIndex);
-            uint32_t offset = this->windowSize * this->scaleFactor;
-
-            stdComplexFFT(signal->begin() + currentIndex + offset, \
-                          std::begin(complexFFTRes), std::log2(windowSize));
-
-            // Half replacements ===================================================
-            std::vector<std::complex<float>> tmp{std::begin(complexFFTRes), \
-                        std::begin(complexFFTRes) + complexFFTRes.size() / 2};
-            std::copy(std::begin(complexFFTRes) + complexFFTRes.size() / 2, \
-                      std::end(complexFFTRes), std::begin(complexFFTRes));
-            std::copy(std::begin(tmp), std::end(tmp), \
-                      std::begin(complexFFTRes) + tmp.size());
-            // =====================================================================
-
-            for (size_t l = 0; l < windowSize; l++) {
-                waterfallMap->data()->setCell(l, 0, std::abs(complexFFTRes.at(l)));
+            if (workIndex == this->tasks->size()) {
+                break;
             }
 
+            if (this->tasks->at(workIndex)->takeWork()) {
 
-            emit this->Progress();
+                QCPColorMap * waterfallMap = this->tasks->at(workIndex)->targetMap;
+
+                if (complexFFTRes.size() != this->tasks->at(workIndex)->windowSize) {
+                    complexFFTRes.resize(this->tasks->at(workIndex)->windowSize);
+                }
+
+                stdComplexFFT(this->tasks->at(workIndex)->signal->begin() + \
+                              this->tasks->at(workIndex)->mapIndex * this->tasks->at(workIndex)->step, \
+                              std::begin(complexFFTRes), std::log2(this->tasks->at(workIndex)->windowSize));
+
+                // Half replacements ===========================================
+                std::vector<std::complex<float>> tmp{std::begin(complexFFTRes), \
+                            std::begin(complexFFTRes) + complexFFTRes.size() / 2};
+                std::copy(std::begin(complexFFTRes) + complexFFTRes.size() / 2, \
+                          std::end(complexFFTRes), std::begin(complexFFTRes));
+                std::copy(std::begin(tmp), std::end(tmp), \
+                          std::begin(complexFFTRes) + tmp.size());
+                // =============================================================
+
+                std::for_each(std::begin(this->complexFFTRes), std::end(this->complexFFTRes), [this](const std::complex<float> & item) {
+                    float tmp = std::abs(item);
+                    if (this->maxValue < std::abs(item))
+                        this->maxValue = std::abs(item);
+                });
+
+                for (size_t l = 0; l < this->tasks->at(workIndex)->windowSize; l++) {
+                    waterfallMap->data()->setCell(l, this->tasks->at(workIndex)->mapIndex, std::abs(this->complexFFTRes.at(l)));
+                }
+
+                emit this->Progress();
+            }
+            workIndex++;
         }
 
-        this->running.store(true);
+        this->running.store(false);
 
     }
 };
