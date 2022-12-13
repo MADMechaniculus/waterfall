@@ -121,6 +121,8 @@ private slots:
     void on_actionGrayscale_triggered();
     void on_actionSpectrum_triggered();
 
+    void on_openFileButton_clicked();
+
 private:
     Ui::WaterfallViewer *ui;
 
