@@ -51,12 +51,14 @@ else()
     if(ANDROID)
         add_library(waterfall SHARED
             ${PROJECT_SOURCES}
+            ${PROJECT_BINARY_DIR}/_deps/breeze_stylesheets-src/dist/qrc/breeze.qrc
         )
     # Define properties for Android with Qt 5 after find_package() calls as:
     #    set(ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android")
 else()
     add_executable(waterfall
         ${PROJECT_SOURCES}
+        ${PROJECT_SOURCE_DIR}/breeze_themes/breeze.qrc
     )
 endif()
 endif()

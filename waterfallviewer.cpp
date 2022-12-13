@@ -7,6 +7,11 @@ WaterfallViewer::WaterfallViewer(QWidget *parent)
 {
     ui->setupUi(this);
     
+    QFile file(":/dark-green/stylesheet.qss");
+    file.open(QFile::ReadOnly | QFile::Text);
+    QTextStream stream(&file);
+    this->ui->plotter->setStyleSheet(stream.readAll());
+
     qRegisterMetaType<QCPColorGradient>("QCPColorGradient");
     qRegisterMetaType<QCPRange>("QCPRange");
     
@@ -52,6 +57,10 @@ WaterfallViewer::WaterfallViewer(QWidget *parent)
         this->workers[i]->connectTasks(&this->tasks);
         connect(this->workers[i], &ColorMapWorker::Progress, this->utilBar, &UtilityToolBar::increaseProgress);
     }
+    // =========================================================================
+
+    // Initial state for colorscheme settings ==================================
+    this->ui->actionSpectrum->trigger();
     // =========================================================================
 }
 
@@ -212,11 +221,11 @@ void WaterfallViewer::cleanPlotter() {
 
     this->dotGraph = this->ui->plotter->addGraph();
     this->dotGraph->setLayer("Dots");
-    this->dotGraph->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssPlusCircle, 100));
+    this->dotGraph->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssCross, 50));
     this->dotGraph->setLineStyle((QCPGraph::LineStyle::lsNone));
 
-    QPen dotPen = QPen(Qt::black);
-    dotPen.setWidth(5);
+    QPen dotPen = QPen(Qt::gray);
+    dotPen.setWidth(2);
     this->dotGraph->setPen(dotPen);
 }
 
@@ -262,14 +271,15 @@ void WaterfallViewer::startProcessing()
 
     this->cleanPlotter();
 
-    colorMap = new QCPColorMap(this->ui->plotter->xAxis, \
-                               this->ui->plotter->yAxis);
+    this->colorMap = new QCPColorMap(this->ui->plotter->xAxis, \
+                                     this->ui->plotter->yAxis);
 
-    colorMap->data()->setSize(windowSize, maps);
-    colorMap->data()->setRange(QCPRange(0, windowSize), QCPRange(0, maps));
-    colorMap->setColorScale(this->colorScale);
-    colorMap->setInterpolate(true);
-    colorMap->setGradient(QCPColorGradient::gpSpectrum);
+    this->colorMap->data()->setSize(windowSize, maps);
+    this->colorMap->data()->setRange(QCPRange(0, windowSize), QCPRange(0, maps));
+    this->colorMap->setColorScale(this->colorScale);
+    this->colorMap->setInterpolate(true);
+
+    this->updateColorScheme();
 
     for (size_t i = 0; i < maps; i++) {
         tasks[i] = new ColorMapWorkerTask(&this->complexSignal, \
@@ -288,6 +298,30 @@ void WaterfallViewer::startProcessing()
     }
 }
 
+void WaterfallViewer::updateColorScheme()
+{
+    if (this->colorMap != nullptr) {
+        if (this->ui->actionGrayscale->isChecked())
+            this->colorMap->setGradient(QCPColorGradient::gpGrayscale);
+        if (this->ui->actionSpectrum->isChecked())
+            this->colorMap->setGradient(QCPColorGradient::gpSpectrum);
+    }
+}
+
+void WaterfallViewer::keyPressEvent(QKeyEvent *event)
+{
+    if (event->key() == Qt::Key_Shift) {
+        this->selectionMode = true;
+    }
+}
+
+void WaterfallViewer::keyReleaseEvent(QKeyEvent *event)
+{
+    if (event->key() == Qt::Key_Shift) {
+        this->selectionMode = false;
+    }
+}
+
 void WaterfallViewer::updateFileList() {
     this->ui->fileList->clear();
     for (size_t i = 0; i < this->filesVector.size(); i++) {
@@ -299,6 +333,7 @@ void WaterfallViewer::on_clearFileListButton_clicked()
 {
     this->filesVector.clear();
     this->updateFileList();
+    this->selectedFile = "";
 }
 
 void WaterfallViewer::on_reprocessButton_clicked()
@@ -312,7 +347,6 @@ void WaterfallViewer::on_reprocessButton_clicked()
 void WaterfallViewer::on_fileList_currentRowChanged(int currentRow)
 {
     if (currentRow == -1) {
-        this->selectedFile = "";
         return;
     }
     this->selectedFile = this->filesVector.at(currentRow).getFilePath();
@@ -321,5 +355,23 @@ void WaterfallViewer::on_fileList_currentRowChanged(int currentRow)
 void WaterfallViewer::appendConsole(QString message)
 {
     this->ui->consolePanel->appendPlainText(message);
+}
+
+void WaterfallViewer::on_actionGrayscale_triggered()
+{
+    if (this->ui->actionGrayscale->isChecked() == false) {
+        this->ui->actionGrayscale->setChecked(true);
+    }
+    this->ui->actionSpectrum->setChecked(false);
+    this->updateColorScheme();
+}
+
+void WaterfallViewer::on_actionSpectrum_triggered()
+{
+    if (this->ui->actionSpectrum->isChecked() == false) {
+        this->ui->actionSpectrum->setChecked(true);
+    }
+    this->ui->actionGrayscale->setChecked(false);
+    this->updateColorScheme();
 }
 

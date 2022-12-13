@@ -13,6 +13,8 @@
 #include <QFuture>
 #include <QtConcurrent/QtConcurrent>
 #include <QImage>
+#include <QFile>
+#include <QKeyEvent>
 
 #include "dsp.hpp"
 #include "qcustomplot.h"
@@ -84,8 +86,7 @@ class WaterfallViewer : public QMainWindow
     std::vector<FileListItem> filesVector;
     std::vector<ColorMapWorkerTask *> tasks;
 
-    QImage * image;
-    QCPColorMap * colorMap;
+    QCPColorMap * colorMap{nullptr};
 
     std::atomic<float> maxColorValue{0};
 
@@ -117,11 +118,18 @@ private slots:
 
     void appendConsole(QString message);
 
+    void on_actionGrayscale_triggered();
+    void on_actionSpectrum_triggered();
+
 private:
     Ui::WaterfallViewer *ui;
 
     void cleanPlotter(void);
     void colorMapCreation(void);
     void startProcessing(void);
+    void updateColorScheme(void);
+
+    void keyPressEvent(QKeyEvent *ev);
+    void keyReleaseEvent(QKeyEvent *ev);
 };
 #endif // WATERFALLVIEWER_H
