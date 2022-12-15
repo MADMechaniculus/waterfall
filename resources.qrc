@@ -1,5 +1,6 @@
 <RCC>
     <qresource prefix="/icons">
-        <file>resources/clear_icon_x32.png</file>
+        <file>resources/backspace-outline.png</file>
+        <file>resources/plus-circle-outline.png</file>
     </qresource>
 </RCC>

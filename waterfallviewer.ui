@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>1084</width>
-    <height>696</height>
+    <height>697</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -38,6 +38,12 @@
             <width>350</width>
             <height>16777215</height>
            </size>
+          </property>
+          <property name="font">
+           <font>
+            <pointsize>8</pointsize>
+            <bold>true</bold>
+           </font>
           </property>
           <property name="isWrapping" stdset="0">
            <bool>false</bool>
@@ -75,7 +81,36 @@
         <item>
          <layout class="QHBoxLayout" name="horizontalLayout">
           <item>
+           <widget class="QToolButton" name="openFileButton">
+            <property name="text">
+             <string/>
+            </property>
+            <property name="icon">
+             <iconset resource="resources.qrc">
+              <normaloff>:/icons/resources/plus-circle-outline.png</normaloff>:/icons/resources/plus-circle-outline.png</iconset>
+            </property>
+            <property name="iconSize">
+             <size>
+              <width>24</width>
+              <height>24</height>
+             </size>
+            </property>
+           </widget>
+          </item>
+          <item>
            <widget class="QPushButton" name="reprocessButton">
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
+              <horstretch>0</horstretch>
+              <verstretch>0</verstretch>
+             </sizepolicy>
+            </property>
+            <property name="font">
+             <font>
+              <pointsize>10</pointsize>
+              <bold>true</bold>
+             </font>
+            </property>
             <property name="text">
              <string>Reprocess selected</string>
             </property>
@@ -90,11 +125,17 @@
              </sizepolicy>
             </property>
             <property name="text">
-             <string>...</string>
+             <string/>
             </property>
             <property name="icon">
              <iconset resource="resources.qrc">
-              <normaloff>:/icons/resources/clear_icon_x32.png</normaloff>:/icons/resources/clear_icon_x32.png</iconset>
+              <normaloff>:/icons/resources/backspace-outline.png</normaloff>:/icons/resources/backspace-outline.png</iconset>
+            </property>
+            <property name="iconSize">
+             <size>
+              <width>24</width>
+              <height>24</height>
+             </size>
             </property>
            </widget>
           </item>
@@ -128,34 +169,50 @@
      <x>0</x>
      <y>0</y>
      <width>1084</width>
-     <height>20</height>
+     <height>23</height>
     </rect>
    </property>
-   <widget class="QMenu" name="menuFile">
-    <property name="title">
-     <string>File</string>
-    </property>
-    <addaction name="actionOpen_file"/>
-   </widget>
+   <property name="font">
+    <font>
+     <pointsize>10</pointsize>
+     <bold>true</bold>
+    </font>
+   </property>
    <widget class="QMenu" name="menuConsole">
+    <property name="font">
+     <font>
+      <pointsize>12</pointsize>
+      <bold>true</bold>
+     </font>
+    </property>
     <property name="title">
      <string>Actions</string>
     </property>
     <widget class="QMenu" name="menuColor_scheme">
+     <property name="font">
+      <font>
+       <pointsize>12</pointsize>
+       <bold>true</bold>
+      </font>
+     </property>
      <property name="title">
       <string>Color scheme</string>
      </property>
      <addaction name="actionGrayscale"/>
      <addaction name="actionSpectrum"/>
     </widget>
-    <addaction name="actionSelection"/>
     <addaction name="menuColor_scheme"/>
    </widget>
-   <addaction name="menuFile"/>
    <addaction name="menuConsole"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
   <widget class="QToolBar" name="topToolBar">
+   <property name="font">
+    <font>
+     <pointsize>10</pointsize>
+     <bold>true</bold>
+    </font>
+   </property>
    <property name="windowTitle">
     <string>toolBar</string>
    </property>
@@ -173,6 +230,12 @@
    </attribute>
   </widget>
   <widget class="QToolBar" name="bottomToolBar">
+   <property name="font">
+    <font>
+     <pointsize>10</pointsize>
+     <bold>true</bold>
+    </font>
+   </property>
    <property name="windowTitle">
     <string>toolBar_2</string>
    </property>
@@ -203,6 +266,12 @@
    <property name="text">
     <string>Grayscale</string>
    </property>
+   <property name="font">
+    <font>
+     <pointsize>10</pointsize>
+     <bold>true</bold>
+    </font>
+   </property>
   </action>
   <action name="actionSpectrum">
    <property name="checkable">
@@ -210,6 +279,12 @@
    </property>
    <property name="text">
     <string>Spectrum</string>
+   </property>
+   <property name="font">
+    <font>
+     <pointsize>10</pointsize>
+     <bold>true</bold>
+    </font>
    </property>
   </action>
  </widget>

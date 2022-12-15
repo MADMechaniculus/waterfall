@@ -397,3 +397,8 @@ void WaterfallViewer::on_actionSpectrum_triggered()
     this->updateColorScheme();
 }
 
+void WaterfallViewer::on_openFileButton_clicked()
+{
+    this->ui->actionOpen_file->trigger();
+}
+
