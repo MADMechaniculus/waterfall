@@ -15,6 +15,7 @@
 #include <QImage>
 #include <QFile>
 #include <QKeyEvent>
+#include <QMessageBox>
 
 #include "dsp.hpp"
 #include "qcustomplot.h"
@@ -55,6 +56,8 @@ public:
 class WaterfallViewer : public QMainWindow
 {
     Q_OBJECT
+
+    static constexpr uint64_t maxFileSize = 128 * 1024 * 1024;
 
     size_t availThreads{0};
 

@@ -89,6 +89,23 @@ void WaterfallViewer::on_actionOpen_file_triggered()
         return;
     }
     
+    if (QFileInfo(fileName).size() > maxFileSize) {
+        QMessageBox oversizingWarning;
+        oversizingWarning.setText("Target file too large");
+        oversizingWarning.setInformativeText("Target file size: " + QString::number((double)QFileInfo(fileName).size() / 1024.0 / 1024.0) + \
+                                             " MB\nWould you like to read the first " + (double)WaterfallViewer::maxFileSize / 1024.0 / 1024.0 + \
+                                             " MB of data, starting at offset zero?");
+        oversizingWarning.setStandardButtons(QMessageBox::Ok | QMessageBox::Cancel);
+        oversizingWarning.setIcon(QMessageBox::Warning);
+
+        int ret = oversizingWarning.exec();
+
+        if (ret == QMessageBox::Cancel) {
+            this->ui->statusbar->showMessage("Processing operation aborted");
+            return;
+        }
+    }
+
     this->selectedFile = fileName;
 
     this->filesVector.emplace_back(fileName);
@@ -236,6 +253,11 @@ void WaterfallViewer::startProcessing()
 
     QFileInfo fileInfo(this->selectedFile);
 
+    uint64_t fileSize = fileInfo.size();
+    if (fileSize > WaterfallViewer::maxFileSize) {
+        fileSize = WaterfallViewer::maxFileSize;
+    }
+
     std::ifstream readFile(this->selectedFile.toStdString(), std::ios::binary);
     if (!readFile.is_open()) {
         this->ui->statusbar->showMessage("Error on opening read stream");
@@ -245,12 +267,12 @@ void WaterfallViewer::startProcessing()
     iq16_t sample;
     std::complex<float> tmp;
     bool pushing = false;
-    if ((this->complexSignal.size() != (fileInfo.size() / sizeof (iq16_t))) && !complexSignal.empty()) {
-        this->complexSignal.resize(fileInfo.size() / sizeof (iq16_t));
+    if ((this->complexSignal.size() != (fileSize / sizeof (iq16_t))) && !complexSignal.empty()) {
+        this->complexSignal.resize(fileSize / sizeof (iq16_t));
     } else {
         pushing = true;
     }
-    for (size_t i = 0; i < fileInfo.size() / sizeof (iq16_t); i++) {
+    for (size_t i = 0; i < fileSize / sizeof (iq16_t); i++) {
         readFile.read((char*)&sample, sizeof (iq16_t));
         tmp.real((float)sample.I);
         tmp.imag((float)sample.Q);
@@ -265,7 +287,7 @@ void WaterfallViewer::startProcessing()
 
     ts = (double)2 / Fs * (double)windowSize * scale;
 
-    size_t maps = ( verticalSize - (verticalSize % (uint64_t)(windowSize * scale))) / (scale * windowSize);
+    size_t maps = ( verticalSize - (verticalSize % (uint64_t)(windowSize * scale))) / (scale * windowSize) - 1;
 
     tasks.resize(maps);
 
